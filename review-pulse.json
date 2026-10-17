@@ -1,0 +1,608 @@
+{
+  "name": "Review Pulse + Fee Explainer",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "03e21ca3-6847-462d-9d83-6aeecb8cf29d",
+      "name": "When chat message received",
+      "webhookId": "3cc78442-d44d-44d3-8dd2-ca7c51822532"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Groww Reviews",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PASTE_YOUR_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1370612850,
+          "mode": "list",
+          "cachedResultName": "groww_reviews",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PASTE_YOUR_SHEET_ID/edit#gid=1370612850"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "048d7376-6380-43df-927b-97a8f24b25fd",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const WEEKS = 12;\nconst MIN_LEN = 40;\nconst MAX_LEN = 280;\nconst MAX_REVIEWS = 400;\nconst cutoff = Date.now() - WEEKS * 7 * 864e5;\nconst pick = (r, names) => {\n  const k = Object.keys(r).find(k => names.includes(k.toLowerCase()));\n  return k ? r[k] : undefined;\n};\n\nconst seen = new Set();\nlet pool = [];\nlet raw = 0;\nfor (const item of $input.all()) {\n  raw++;\n  const r = item.json;\n  const text = String(pick(r, ['content', 'review', 'text']) || '').trim();\n  if (text.length < MIN_LEN || text.length > MAX_LEN) continue;\n  const key = text.toLowerCase();\n  if (seen.has(key)) continue;\n  seen.add(key);\n  const d = pick(r, ['at', 'date']);\n  const t = d ? Date.parse(d) : NaN;\n  if (!isNaN(t) && t < cutoff) continue;\n  const s = Number(pick(r, ['score', 'rating']));\n  pool.push({ text, score: isNaN(s) ? null : s, date: d || null });\n}\n\nif (pool.length < 10) {\n  throw new Error('Only ' + pool.length + ' usable reviews. Check column names and dates.');\n}\n\n// Spread the sample evenly across the 12 weeks instead of taking the newest rows\npool.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));\nconst step = Math.max(1, pool.length / MAX_REVIEWS);\nconst reviews = [];\nfor (let i = 0; i < MAX_REVIEWS && Math.floor(i * step) < pool.length; i++) {\n  const r = pool[Math.floor(i * step)];\n  reviews.push({ id: reviews.length, text: r.text, score: r.score, date: r.date });\n}\n\nconst reviewsText = reviews.map(r => `[${r.id}] (${r.score}*) ${r.text}`).join('\\n');\n\nreturn [{ json: { reviews, reviewsText, count: reviews.length, poolSize: pool.length, rawRows: raw, weeks: WEEKS } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "2704a437-539d-425e-8ed4-e3686b55902a",
+      "name": "Prepare Reviews"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.reviewsText }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You analyse Groww app reviews for a product team.\nEach line is: [id] (star rating) review text. Star ratings can be misleading, so judge from the text.\nDo the following:\n1. Find at most 5 distinct themes. Each theme must be a PROBLEM or REQUEST users raise (for example slow app, poor customer support, high charges), never praise.\n   Do not use catch-all themes such as \"General Feedback\", \"Other\", \"Miscellaneous\" or \"User experience\".\n   Themes must not overlap: each kind of complaint belongs in exactly one theme. Requests for new features belong only in a \"Missing features\" theme. App crashes, lag and bugs belong only in a \"Technical glitches\" theme.\n2. Give each theme a short name and a one-sentence description of what reviews in that theme complain about or ask for.\n3. Identify ONE fee or charge that users recurrently complain about or misunderstand.\nfee_category must be exactly one of: exit_load, brokerage_and_stock_charges, expense_ratio_and_commission, none.\n - exit_load: money deducted when redeeming mutual fund units\n - brokerage_and_stock_charges: brokerage, hidden or extra charges, STT, stamp duty, DP, square-off or other charges on trades\n - expense_ratio_and_commission: fund expense ratio, direct vs regular plan, commission\nUse \"none\" if no fee issue recurs.\nUse only the reviews provided."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        672,
+        0
+      ],
+      "id": "93482af3-9b7a-4062-9884-11775ab6f2b5",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        544,
+        128
+      ],
+      "id": "4086fb81-328f-4ea1-b8eb-00abce744033",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"themes\": [\n    {\"name\": \"Poor customer support\", \"description\": \"Support is slow, unreachable or does not resolve issues\"}\n  ],\n  \"fee_category\": \"brokerage_and_stock_charges\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        848,
+        192
+      ],
+      "id": "52ea9626-9524-4771-af6f-1f1813074064",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Prepare Reviews').first().json;\nconst agent = $('AI Agent').first().json.output;\nconst reviews = prep.reviews;\nconst N = reviews.length;\nconst byId = Object.fromEntries(reviews.map(r => [r.id, r]));\nconst pretty = s => { const t = String(s).replace(/_/g, ' ').trim(); return t.charAt(0).toUpperCase() + t.slice(1); };\n\n// 1. Themes: the agent named them, the labels from Classify Reviews place each review\nconst themes = (agent.themes || []).slice(0, 5).map(t => ({ name: pretty(t.name), ids: [] }));\nconst labelled = new Set();\nfor (const item of $input.all()) {\n  const j = item.json;\n  const raw = typeof j.text === 'string' ? j.text : (typeof j.output === 'string' ? j.output : JSON.stringify(j));\n  for (const m of raw.matchAll(/(\\d+)\\s*,\\s*(\\d+)/g)) {\n    const id = Number(m[1]), th = Number(m[2]);\n    if (!byId[id] || labelled.has(id)) continue;\n    labelled.add(id);\n    if (th >= 1 && th <= themes.length) themes[th - 1].ids.push(id);\n  }\n}\nif (labelled.size < 0.9 * N) throw new Error('The model labelled only ' + labelled.size + ' of ' + N + ' reviews. Run again.');\nconst ranked = themes.filter(t => t.ids.length > 0).sort((a, b) => b.ids.length - a.ids.length);\nif (ranked.length < 3) throw new Error('Fewer than 3 themes have labelled reviews.');\nconst top = ranked.slice(0, 3);\n\n// 2. Quotes: one per top theme, word for word from the sheet, complaints first\nconst BAD = /\\b(fuck|shit|bsdk|chutiya|chor|gadhe|bakwas|ghatiya|rubbish|pathetic|fraud|scam|scammers?|loot|cheaters?|idiot|bhogash|looters?)\\b/i;\nconst nonAscii = s => (s.match(/[^\\x00-\\x7F]/g) || []).length / s.length;\nconst used = new Set();\nconst quotes = top.map(t => {\n  const cands = t.ids.map(i => byId[i])\n    .filter(r => r.text.length >= 40 && r.text.length <= 160 && nonAscii(r.text) < 0.01 && (r.text.toLowerCase().match(/\\b(the|and|is|are|not|my|this|for|with|have|was|that|they|you|your|but)\\b/g) || []).length >= 3 && !BAD.test(r.text) && !/uninstall|download|install|worst/i.test(r.text) && !used.has(r.id))\n    .sort((a, b) => ((a.score || 3) > 3) - ((b.score || 3) > 3) || b.text.length - a.text.length);\n  if (!cands.length) throw new Error('No usable quote for theme: ' + t.name);\n  used.add(cands[0].id);\n  return { id: cands[0].id, quote: cands[0].text, score: cands[0].score, theme: t.name };\n});\n\n// 3. Fee issue: count supporting reviews in the data\nconst FEE = {\n  exit_load: /exit load/i,\n  brokerage_and_stock_charges: /brokerage|brokrage|brokerge|broker charge|charges?\\b|\\bfees?\\b|commission|hidden|square.?off|ddpi|\\bstt\\b|stamp/i,\n  expense_ratio_and_commission: /expense|expens|commission|regular plan|direct plan/i\n};\nconst PRAISE = /no (other )?hidden|low (cost|charges|platform)|nominal|zero brokerage|does not charge|free of cost|minimum brokerage|charges (are )?(ok|fine|low)/i;\nconst HIDDEN = /hidden|without (telling|informing|notice)|bina (btaye|bataye)|pta bhi nhi|not transparent|doesn.t mention|unnecessar|deduct|extra charge|unexpected/i;\nconst cat = agent.fee_category;\nif (!FEE[cat]) throw new Error('No fee issue chosen by the agent (category: ' + cat + ').');\nconst feeReviews = reviews.filter(r => FEE[cat].test(r.text) && !PRAISE.test(r.text));\nif (feeReviews.length < 10) throw new Error('Fee issue \"' + cat + '\" appears in only ' + feeReviews.length + ' reviews; not recurring enough.');\nconst hiddenCount = feeReviews.filter(r => HIDDEN.test(r.text)).length;\n\nreturn [{ json: {\n  today: new Date().toISOString().slice(0, 10),\n  n: N,\n  weeks: prep.weeks,\n  labelled: labelled.size,\n  themes: ranked.map(t => ({ name: t.name, count: t.ids.length })),\n  top: top.map(t => ({ name: t.name, count: t.ids.length })),\n  quotes,\n  fee_category: cat,\n  fee_count: feeReviews.length,\n  fee_hidden_count: hiddenCount\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        48
+      ],
+      "id": "e1aad760-7f38-4ed8-9677-f8ce001b5474",
+      "name": "Validate Insights"
+    },
+    {
+      "parameters": {
+        "jsCode": "const KB = {\n  sources: [\n    { title: 'Groww: Brokerage charges and pricing', url: 'https://groww.in/pricing' },\n    { title: 'Groww: Brokerage calculator', url: 'https://groww.in/calculators/brokerage-calculator' }\n  ],\n  categories: {\n    brokerage_and_stock_charges: {\n      label: 'Brokerage and other charges on stock trades',\n      bullets: [\n        'Equity brokerage is ₹20 or 0.1% of the order value per executed order, whichever is lower, with a minimum of ₹5.',\n        'Each trade also carries regulatory and statutory charges: STT, stamp duty, exchange transaction charge, SEBI turnover charge and Investor Protection Fund Trust charge. For equity delivery, STT is 0.1% on buy and sell and stamp duty is 0.015% on buy; for equity intraday, STT is 0.025% on sell and stamp duty is 0.003% on buy.',\n        'DP charges apply per sell transaction on equity delivery (depository ₹3.5, or ₹3.25 for women, plus Groww ₹16.5; ₹0 where the debit value is under ₹100). DP charges are ₹0 for intraday.',\n        'An 18% GST applies on brokerage, DP charges, exchange transaction charges, IPFT, SEBI turnover charges, delayed payment charges, DDPI charges, KYC modification charges, API charges and auto square-off charges.',\n        'Some charges apply only in specific cases: auto square-off of open intraday positions is ₹50 per position, delayed payment charges are 0.05% per day, and DDPI activation is ₹100 plus GST.',\n        'Account opening and account maintenance are ₹0. The brokerage calculator estimates the total charges for a trade before it is placed.'\n      ]\n    }\n  }\n};\n\nconst v = $input.first().json;\nconst cat = KB.categories[v.fee_category];\nif (!cat) throw new Error('No verified facts for fee category \"' + v.fee_category + '\". Add it to the KB or pick another category.');\n\nconst explainer = {\n  title: cat.label,\n  bullets: cat.bullets.slice(0, 6),\n  links: KB.sources.slice(0, 2).map(s => s.url),\n  lastChecked: v.today\n};\nconst explainerText = [\n  cat.label,\n  ...explainer.bullets.map(b => '- ' + b),\n  '',\n  'Sources: ' + explainer.links.join(' | '),\n  'Last checked: ' + explainer.lastChecked\n].join('\\n');\n\nreturn [{ json: { ...v, fee_label: cat.label, explainer, explainerText } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        48
+      ],
+      "id": "0bb7dd45-48f5-4207-ae87-85d25d94c67a",
+      "name": "Fee Explainer"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write a weekly product pulse for the Groww app of AT MOST 220 words using only the facts below. Plain text only: no asterisks, no markdown. No preamble.\nUse these sections, in this order:\nTop themes (with review counts)\nIn users' words (copy the 3 quotes EXACTLY, inside quotation marks)\nKey observation (what is going wrong or trending)\nAction ideas (exactly 3, numbered, one sentence each)\n\nRules:\n- Use only the facts below. Do not give investment advice and do not recommend any fund, stock or trade to users.\n- Do not state any fee amount or rate.\n- Say that the counts come from a sample of the reviews from the last weeks given in the facts.\n- In Key observation, name the fee issue, say how many sampled reviews mention it, and how many of those describe hidden or unexpected deductions. Describe it as users reporting high or unclear charges. Do not say users are confused unless the facts show it.\n- Each action idea must name a specific product change, tied to one of the three themes. Do not use vague verbs like \"explore\", \"review\", \"prioritize\" or \"consider\".\n\nFacts:\n{{ JSON.stringify({ sampled_reviews: $json.n, window_weeks: $json.weeks, top_themes: $json.top, quotes: $json.quotes.map(q => q.quote), fee_issue: $json.fee_label, reviews_mentioning_fee: $json.fee_count, reviews_describing_hidden_or_unexpected_deductions: $json.fee_hidden_count }) }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1936,
+        48
+      ],
+      "id": "403df79b-a7e5-4b22-ba42-4051173ddcf9",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1872,
+        192
+      ],
+      "id": "669a0b54-0792-401f-9617-95cf8864d667",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $('Fee Explainer').first().json;\nconst pulse = String($input.first().json.text || '').trim();\nconst wc = s => (s.match(/\\S+/g) || []).length;\n\n// Checks: stop here if the pulse breaks the brief\nconst errs = [];\nif (!pulse) errs.push('pulse is empty');\nif (wc(pulse) > 250) errs.push('pulse is ' + wc(pulse) + ' words (max 250)');\nconst missing = v.quotes.filter(q => !pulse.includes(q.quote));\nif (missing.length) errs.push('quotes missing or reworded: ' + missing.map(q => q.quote.slice(0, 30)).join(' | '));\nconst idx = pulse.toLowerCase().lastIndexOf('action ideas');\nconst tail = idx >= 0 ? pulse.slice(idx) : '';\nif ((tail.match(/^\\s*[1-3][.)]\\s/gm) || []).length < 3) errs.push('fewer than 3 numbered action ideas');\nif (errs.length) throw new Error(errs.join('; '));\n\nconst e = v.explainer;\nconst entry = {\n  date: v.today,\n  top_themes: v.top.map(t => t.name),\n  weekly_pulse: pulse,\n  identified_fee_issue: v.fee_label,\n  explanation_bullets: e.bullets,\n  source_links: e.links\n};\n\nconst subject = `Weekly Product Pulse + Customer Clarification — ${v.today}`;\n\nconst emailBody =\n  `${pulse}\\n\\n----\\nSupport snippet (reusable)\\n\\n${v.explainerText}\\n`;\n\nconst docText =\n  `\\n\\n=== ${v.today} ===\\n` +\n  `date: ${entry.date}\\n` +\n  `top_themes: ${entry.top_themes.join('; ')}\\n` +\n  `identified_fee_issue: ${entry.identified_fee_issue}\\n\\n` +\n  `weekly_pulse:\\n${pulse}\\n\\n` +\n  `explanation_bullets:\\n${e.bullets.map(b => '- ' + b).join('\\n')}\\n\\n` +\n  `source_links:\\n${e.links.join('\\n')}\\n` +\n  `Last checked: ${e.lastChecked}\\n`;\n\nconst preview =\n  `WEEKLY PULSE (${wc(pulse)} words)\\n\\n${pulse}\\n\\n` +\n  `FEE EXPLAINER\\n\\n${v.explainerText}\\n\\n` +\n  `If you approve: (1) this entry is appended to the Google Doc, ` +\n  `(2) an email draft is created with the subject \"${subject}\". Nothing is sent.`;\n\nreturn [{ json: { entry, subject, emailBody, docText, preview, pulseWords: wc(pulse) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        48
+      ],
+      "id": "22ec4c55-58e2-4cfa-8e71-d71e7ae053f4",
+      "name": "Assemble Outputs"
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Approve weekly pulse actions?",
+        "formDescription": "={{ $json.preview }}",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approve"
+                  },
+                  {
+                    "option": "Reject"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        48
+      ],
+      "id": "1ecaabae-824c-4c7e-9c10-9dd6ce4b5ffd",
+      "name": "Approval Gate",
+      "webhookId": "75711a2a-8c14-4a78-bf77-df28f10c02b9"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "81702c29-de6f-4d69-b9ff-bdffb7a86dd2",
+              "leftValue": "={{ $json.Decision }}",
+              "rightValue": "Approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2688,
+        48
+      ],
+      "id": "f555e064-eda6-4c49-a7ba-266a0260b7ee",
+      "name": "Approved?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2816,
+        144
+      ],
+      "id": "3c6adf93-7dd6-488a-8189-00d1f8b6126a",
+      "name": "Rejected - nothing logged"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentURL": "https://docs.google.com/document/d/PASTE_YOUR_DOC_ID/edit?tab=t.0",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "action": "insert",
+              "text": "={{ $('Assemble Outputs').first().json.docText }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        -16
+      ],
+      "id": "53a11c1a-06f7-4548-b2b5-a0d786ea3f88",
+      "name": "MCP Action 1 - Append to Google Doc",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Prepare Reviews').first().json;\nconst agent = $('AI Agent').first().json.output;\nconst themes = (agent.themes || []).slice(0, 5);\nif (themes.length < 3) throw new Error('Agent returned fewer than 3 themes.');\n\nconst themeList = themes.map((t, i) => `${i + 1}. ${t.name}: ${t.description || ''}`).join('\\n');\nconst SIZE = 50;\nconst items = [];\nfor (let i = 0; i < prep.reviews.length; i += SIZE) {\n  const chunk = prep.reviews.slice(i, i + SIZE);\n  const batchText = chunk.map(r => `[${r.id}] ${r.text}`).join('\\n');\n  const chatInput =\n    `Themes:\\n${themeList}\\n0. None of the above (praise, noise, or a topic not listed)\\n\\n` +\n    `For each review below, choose the single best-matching theme number, or 0 if none fit.\\n` +\n    `If a review fits two themes, choose the one it complains about most.\\n\\n` +\n    `Reply with ONLY one line per review, in the format: id,theme\\n` +\n    `Example:\\n12,3\\n13,0\\n14,1\\n` +\n    `Include every review id, in order. No other text, no headings, no explanations.\\n\\n` +\n    `Reviews:\\n${batchText}`;\n  items.push({ json: { chatInput, expected: chunk.length } });\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        48
+      ],
+      "id": "74dc49d4-c17f-4c99-9d45-4f3d38973810",
+      "name": "Make Batches"
+    },
+    {
+      "parameters": {
+        "promptType": "=define",
+        "text": "={{ $json.chatInput }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1424,
+        144
+      ],
+      "id": "465cc85b-67be-4fb1-a966-2736d872eeb5",
+      "name": "Classify Reviews"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1392,
+        384
+      ],
+      "id": "fc63894a-4fad-48c5-8b73-0e6ab2895cf7",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ $('Assemble Outputs').first().json.subject }}",
+        "message": "={{ $('Assemble Outputs').first().json.emailBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3136,
+        -16
+      ],
+      "id": "1b703525-e44d-44ed-98d4-01b502c75435",
+      "name": "MCP Action 2 - Create Gmail Draft",
+      "webhookId": "4018bb33-682d-4c6f-965c-5f8671aa1e1e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reviews": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Make Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Insights": {
+      "main": [
+        [
+          {
+            "node": "Fee Explainer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fee Explainer": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Assemble Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Outputs": {
+      "main": [
+        [
+          {
+            "node": "Approval Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Gate": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "MCP Action 1 - Append to Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected - nothing logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make Batches": {
+      "main": [
+        [
+          {
+            "node": "Classify Reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Reviews": {
+      "main": [
+        [
+          {
+            "node": "Validate Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classify Reviews",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Action 1 - Append to Google Doc": {
+      "main": [
+        [
+          {
+            "node": "MCP Action 2 - Create Gmail Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a0a46d04-447e-44d3-89fc-a3af77f8eab6",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "id": "Qc46hOav0Dt8M8D3",
+  "tags": []
+}
