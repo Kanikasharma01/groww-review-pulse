@@ -9,7 +9,7 @@ After a human approval step, it appends the output to a Google Doc and creates a
 
 Built for the NextLeap PM Fellowship. Product: Groww (the same product as my facts-only mutual fund chatbot).
 
-- Demo video: `<add link>`
+- Demo video: `https://screenrec.com/share/yN3VYXaU1J`
 - Fee issue identified: **Brokerage and other charges on stock trades** (details below)
 
 ## What it does
