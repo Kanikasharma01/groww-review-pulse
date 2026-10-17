@@ -69,7 +69,7 @@ Most fee reviews say charges are high; a smaller group says deductions were unex
 ## Files
 
 - `workflow/review-pulse.json`: the n8n workflow (credentials and personal links removed)
-- `data/groww_reviews_sample.csv`: public Play Store reviews used as input
+- `data/groww_reviews.csv`: public Play Store reviews used as input
 - `outputs/weekly_pulse.md`: the pulse from the final run
 - `docs/`: screenshots of the Doc entry, the email draft and the workflow
 - `sources.md`: source list
