@@ -9,7 +9,7 @@ After a human approval step, it appends the output to a Google Doc and creates a
 
 Built for the NextLeap PM Fellowship. Product: Groww (the same product as my facts-only mutual fund chatbot).
 
-- Demo video: `https://screenrec.com/share/yN3VYXaU1J`
+- Demo video: https://screenrec.com/share/yN3VYXaU1J
 - Fee issue identified: **Brokerage and other charges on stock trades** (details below)
 
 ## What it does
@@ -38,12 +38,12 @@ Note on MCP: this build uses n8n's built-in Google Docs and Gmail nodes behind a
 
 **Brokerage and other charges on stock trades.**
 
-From the final run (replace with your numbers):
+From the final run (17 October 2026):
 
-- Reviews in the CSV: 12,660. Usable after filtering (unique, 40 to 280 characters, last 12 weeks): `<poolSize>`. Analysed: 400.
-- Reviews mentioning brokerage or other charges (excluding praise about low charges): `<fee_count>` of 400.
-- Of those, reviews describing hidden or unexpected deductions: `<fee_hidden_count>`.
-- Top 3 themes: `<theme 1 (count)>`, `<theme 2 (count)>`, `<theme 3 (count)>`.
+- Reviews in the CSV: 12,660. Usable after filtering (unique, 40 to 280 characters, last 12 weeks): 1,925. Analysed: 400 (sampled evenly across the window).
+- Reviews mentioning brokerage or other charges (excluding praise about low charges): 41 of 400.
+- Of those, reviews describing hidden or unexpected deductions: 5.
+- Top 3 themes: Technical Glitches (63), Missing Features (52), High Brokerage Charges (40).
 
 Most fee reviews say charges are high; a smaller group says deductions were unexpected or not clearly shown. So this is a pain point, not mainly a confusion about a single fee. The explainer therefore lists what is charged on a trade and where each charge comes from, and takes no side.
 
@@ -70,18 +70,19 @@ Most fee reviews say charges are high; a smaller group says deductions were unex
 
 - `workflow/review-pulse.json`: the n8n workflow (credentials and personal links removed)
 - `data/groww_reviews.csv`: public Play Store reviews used as input
-- `outputs/weekly_pulse.md`: the pulse from the final run
+- `outputs/weekly_pulse.md`: the pulse and fee explainer from the final run
 - `docs/`: screenshots of the Doc entry, the email draft and the workflow
 - `sources.md`: source list
 - `scripts/fetch_reviews.py`: review fetcher
 
 ## Limitations
 
-- The model names the themes on every run, so theme names and counts shift slightly between runs. Temperature is set to 0 to reduce this.
+- The model names the themes on every run, so theme names and counts shift slightly between runs. Temperature is 0 on the theme and labelling steps to reduce this (the pulse writer uses 0.2).
 - Counts come from a sample of 400 reviews, not all reviews.
 - Star ratings are unreliable in this data (some 5-star reviews are complaints), so themes are judged from the text.
 - Fee facts are copied from Groww's pricing page on the date shown in "Last checked" and must be rechecked before reuse.
 - Reviews are in several languages; quotes are limited to English by design.
+- Quotes are the longest eligible review per theme, so one quote can be an outlier. In the final run, the second quote and the second action idea come from a single unusual request (banking app integrations) and are not typical of the Missing Features theme. A fix is to pick the quote that shares the most wording with the other reviews in its theme.
 
 ## Disclaimer
 
